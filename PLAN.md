@@ -27,6 +27,8 @@ response, with its field layout serialised into props.
 - **Browser-verified** with Vue 3 + `@inertiajs/vue3` 3.11 (`tests/Harness/frontend/`): mounts with props,
   `<Link>` navigation is XHR (no reload), back button works. Live preview via a real draft + preview token
   renders the draft on first visit and over X-Inertia, and `page.url` keeps the token. 23 harness checks.
+- Follow-up from the Wingman spike: serialise core Eloquent elements (non-`$hidden` model attributes) instead
+  of the `{id,title,url}` fallback.
 - Not yet verified: assets and Matrix props, multi-site, React/Svelte, SSR.
 - Component names are the full path under the resolver root (`inertia:Pages/Article` → `./Pages/Article.vue`
   with a `./Pages/**` glob resolving `./${name}.vue`). Document this in the starter kits.
