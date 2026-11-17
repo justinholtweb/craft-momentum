@@ -24,7 +24,12 @@ response, with its field layout serialised into props.
   19 harness checks (`tests/Harness/check.sh`) incl. CP isolation, 409 version mismatch, XSS breakout.
 - Learned: Craft 6 site templates live in `resources/views` when that dir exists (else `templates/`);
   `SetRoute` + `ControllerRoute` is the clean hook; Inertia v3 root is `<script data-page type=json>` + div.
-- Not yet verified: live preview / share links, assets and Matrix props, multi-site, a real Vue/React bundle.
+- **Browser-verified** with Vue 3 + `@inertiajs/vue3` 3.11 (`tests/Harness/frontend/`): mounts with props,
+  `<Link>` navigation is XHR (no reload), back button works. Live preview via a real draft + preview token
+  renders the draft on first visit and over X-Inertia, and `page.url` keeps the token. 23 harness checks.
+- Not yet verified: assets and Matrix props, multi-site, React/Svelte, SSR.
+- Component names are the full path under the resolver root (`inertia:Pages/Article` → `./Pages/Article.vue`
+  with a `./Pages/**` glob resolving `./${name}.vue`). Document this in the starter kits.
 
 ## Phases
 1. **Front-end Inertia response (Lite).** Own middleware + root view for site requests only — must never touch

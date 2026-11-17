@@ -3,7 +3,9 @@
 # Prereqs (one-off): sections `articles` (template `inertia:Pages/Article`, uri `articles/{slug}`) and
 # `notes` (template `notes/_entry`), entries `hello-momentum-2` → related `second-article-2`, a disabled
 # `second-article`, then `tests/Harness/seed-fields.php` run through `ddev artisan tinker --execute`.
+# Browser test app: copy tests/Harness/frontend/ into the harness's resources/js/ and `ddev npm run build`.
 set -uo pipefail
+exec < /dev/null   # ddev artisan tinker otherwise waits on stdin
 H=/Users/jholt/Sites/plugin-testing-craft6
 U=https://plugin-testing-craft6.ddev.site
 cd "$H" || exit 2
@@ -13,8 +15,11 @@ settings() { ddev artisan tinker --execute "\$p=\CraftCms\Cms\Support\Facades\Pl
 json() { python3 -I -c "import json,sys;d=json.load(sys.stdin);print($1)"; }
 
 settings "['excludeFields' => null, 'propDepth' => 2, 'assetVersion' => null, 'viteEntries' => null, 'rootTemplate' => null]"
+# The asset version is the Vite manifest hash when a build exists; X-Inertia requests must echo it.
+V=$(curl -sk "$U/articles/hello-momentum-2" | python3 -I -c 'import sys,re,json,html;s=sys.stdin.read();print(json.loads(html.unescape(re.search(r"type=\"application/json\">(.*?)</script>",s,re.S).group(1)))["version"])')
+xi() { curl -sk -H 'X-Inertia: true' -H "X-Inertia-Version: $V" "$@"; }
 
-page=$(curl -sk -H 'X-Inertia: true' "$U/articles/hello-momentum-2")
+page=$(xi "$U/articles/hello-momentum-2")
 ok "X-Inertia visit returns the section's component" "$(echo "$page" | json 'd["component"]')" "Pages/Article"
 ok "entry title in props" "$(echo "$page" | json 'd["props"]["entry"]["title"]')" "Hello Momentum"
 ok "plain text field in props" "$(echo "$page" | json 'd["props"]["entry"]["fields"]["summary"]')" "Inertia pages from Craft routing."
@@ -37,6 +42,12 @@ ok "excluded field is not sent" "$(echo "$page" | json '"internalNotes" in d["pr
 ok "depth 0 sends related ids" "$(echo "$page" | json 'd["props"]["entry"]["fields"]["related"]')" "[10]"
 ok "stale asset version gets 409" "$(curl -sk -o /dev/null -w '%{http_code}' -H 'X-Inertia: true' -H 'X-Inertia-Version: v1' "$U/articles/hello-momentum-2")" "409"
 settings "['excludeFields' => null, 'propDepth' => 2, 'assetVersion' => null]"
+
+T=$(ddev artisan tinker --execute "$(cat "$(dirname "$0")/preview-token.php")" 2>&1 | grep -o 'TOKEN=[^ ]*' | cut -d= -f2)
+ok "live preview renders the draft (first visit)" "$(curl -sk "$U/articles/hello-momentum-2?token=$T" | grep -c 'DRAFT-ONLY summary')" "1"
+ok "live preview renders the draft (X-Inertia)" "$(xi "$U/articles/hello-momentum-2?token=$T" | json 'd["props"]["entry"]["fields"]["summary"]')" "DRAFT-ONLY summary"
+ok "preview page URL keeps the token" "$(xi "$U/articles/hello-momentum-2?token=$T" | json '"token=" in d["url"]')" "True"
+ok "live page doesn't show the draft" "$(xi "$U/articles/hello-momentum-2" | json 'd["props"]["entry"]["fields"]["summary"]')" "Inertia pages from Craft routing."
 
 ok "Twig sections are untouched" "$(curl -sk "$U/notes/a-twig-note" | grep -c 'id="twig-note"')" "1"
 ok "disabled entry 404s" "$(curl -sk -o /dev/null -w '%{http_code}' "$U/articles/second-article")" "404"
