@@ -1,0 +1,18 @@
+{#
+  Momentum's default root template. Copy it into your site templates, then set
+  "Root template" in Momentum's settings to its path.
+
+  `page` is the Inertia page object; `viteEntries` comes from the settings.
+#}
+<!DOCTYPE html>
+<html lang="{{ currentSite.language }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {% if viteEntries %}{{ vite(viteEntries) }}{% else %}<!-- Momentum: no Vite entry points set (Settings → Momentum), so no JavaScript is loaded. -->{% endif %}
+  {{ inertiaHead(page) }}
+</head>
+<body>
+  {{ inertia(page) }}
+</body>
+</html>

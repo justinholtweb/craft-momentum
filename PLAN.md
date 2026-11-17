@@ -18,6 +18,14 @@ A section's template setting can name an Inertia component (`inertia:Pages/Artic
 routing still resolves the URI → entry; Momentum's front-end middleware renders that entry as an Inertia
 response, with its field layout serialised into props.
 
+## Status
+- **2026-11-17 — phase 1 working.** Entry routing, root template, site middleware, prop serialisation
+  (plain fields + relations; assets/Matrix paths written but not yet exercised live). 25 Pest tests,
+  19 harness checks (`tests/Harness/check.sh`) incl. CP isolation, 409 version mismatch, XSS breakout.
+- Learned: Craft 6 site templates live in `resources/views` when that dir exists (else `templates/`);
+  `SetRoute` + `ControllerRoute` is the clean hook; Inertia v3 root is `<script data-page type=json>` + div.
+- Not yet verified: live preview / share links, assets and Matrix props, multi-site, a real Vue/React bundle.
+
 ## Phases
 1. **Front-end Inertia response (Lite).** Own middleware + root view for site requests only — must never touch
    the CP's `HandleInertiaRequests`. `inertia:` template prefix; `Momentum::render($component, $props)` for
