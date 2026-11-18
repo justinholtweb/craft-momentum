@@ -22,6 +22,9 @@ Render Craft entries as Inertia pages (Vue, React or Svelte) straight from Craft
 3. **Root template.** First visits render `_momentum/root` (or your *Root template*), a site Twig template
    that outputs `{{ inertiaHead(page) }}` and `{{ inertia(page) }}`. Set *Vite entry points* (e.g.
    `resources/js/app.js`) to load your front-end bundle, or write your own root template with `vite()`.
+   **Blade works too:** point *Root template* at a `.blade.php` site template and use Inertia's own
+   directives — `@inertiaHead` in the head, `@inertia` in the body, `@vite($viteEntries)` for your bundle.
+   Craft 6 picks the engine by file extension.
 4. **Your own routes.** Inject `JustinHoltWeb\Momentum\Momentum` and return
    `$momentum->render('Search', [...])` from routes that use the `craft.web` middleware group (or the
    `momentum` middleware alias).

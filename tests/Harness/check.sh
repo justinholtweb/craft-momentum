@@ -3,6 +3,7 @@
 # Prereqs (one-off): sections `articles` (template `inertia:Pages/Article`, uri `articles/{slug}`) and
 # `notes` (template `notes/_entry`), entries `hello-momentum-2` → related `second-article-2`, a disabled
 # `second-article`, then `tests/Harness/seed-fields.php` run through `ddev artisan tinker --execute`.
+# Blade root: copy tests/Harness/templates/momentum-root.blade.php to the harness's resources/views/.
 # Browser test app: copy tests/Harness/frontend/ into the harness's resources/js/ and `ddev npm run build`.
 set -uo pipefail
 exec < /dev/null   # ddev artisan tinker otherwise waits on stdin
@@ -59,6 +60,13 @@ cp=$(curl -sk -b "$J" -H 'X-Inertia: true' -H "X-Inertia-Version: $V" -H 'X-Requ
 ok "CP keeps Craft's own Inertia page" "$(echo "$cp" | json 'd["component"]')" "Dashboard"
 ok "CP gets no Momentum shared props" "$(echo "$cp" | json '"site" in d["props"] and "currentUser" in d["props"]')" "False"
 ok "settings page loads" "$(curl -sk -b "$J" -o /dev/null -w '%{http_code}' "$U/admin/settings/plugins/momentum")" "200"
+
+# Blade root template (Craft 6 renders .blade.php by extension; Inertia's @inertia/@inertiaHead directives)
+settings "['rootTemplate' => 'momentum-root']"
+blade=$(curl -sk "$U/articles/hello-momentum-2")
+ok "Blade root template is used" "$(echo "$blade" | grep -c momentum-blade-root)" "1"
+ok "Blade root outputs the same Inertia page JSON" "$(echo "$blade" | grep -c '<script data-page="app" type="application/json">')" "1"
+settings "['rootTemplate' => null]"
 
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]
