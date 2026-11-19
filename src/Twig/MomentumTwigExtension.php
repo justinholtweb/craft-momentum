@@ -11,6 +11,7 @@ use Twig\TwigFunction;
 /**
  * `{{ inertia(page) }}` and `{{ inertiaHead(page) }}` — the Twig equivalents of
  * Inertia's `@inertia` and `@inertiaHead` Blade directives, for root templates.
+ * Both output the same markup as the Blade directives (and the same SSR result).
  */
 class MomentumTwigExtension extends AbstractExtension
 {
@@ -36,7 +37,7 @@ class MomentumTwigExtension extends AbstractExtension
         $id = htmlspecialchars($id, ENT_QUOTES);
 
         return '<script data-page="'.$id.'" type="application/json">'
-            .json_encode($page, JSON_HEX_TAG | JSON_HEX_AMP | JSON_THROW_ON_ERROR)
+            .json_encode($page, JSON_HEX_TAG | JSON_THROW_ON_ERROR)
             .'</script><div id="'.$id.'"></div>';
     }
 

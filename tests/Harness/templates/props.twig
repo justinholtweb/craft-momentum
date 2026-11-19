@@ -1,0 +1,4 @@
+{# Momentum harness: momentum.props(entry) from Twig (?slug=) #}
+{% set entry = craft.entries.section('momentumKitchen').slug(app('request').query('slug')).one() %}
+<script id="props" type="application/json">{{ entry ? momentum.props(entry)|json_encode|raw : 'null' }}</script>
+<p id="component">{{ entry ? momentum.componentFor(entry) : '' }}</p>

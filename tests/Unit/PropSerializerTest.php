@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Illuminate\Contracts\Support\Arrayable;
+use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\HtmlString;
 use JustinHoltWeb\Momentum\Props\PropSerializer;
 
@@ -48,4 +50,34 @@ it('drops objects it cannot represent instead of leaking them', function () {
     };
 
     expect(new PropSerializer()->value($secret, 2))->toBeNull();
+});
+
+it('serialises collections item by item, never through toArray()', function () {
+    $item = new class implements Arrayable
+    {
+        public function toArray(): array
+        {
+            return ['safe' => true];
+        }
+    };
+
+    expect(new PropSerializer()->value(collect([1, 'two', $item]), 2))->toBe([1, 'two', ['safe' => true]]);
+});
+
+it('renders Htmlable values as their HTML', function () {
+    $html = new class implements Htmlable
+    {
+        public function toHtml(): string
+        {
+            return '<em>hi</em>';
+        }
+    };
+
+    expect(new PropSerializer()->value($html, 2))->toBe('<em>hi</em>');
+});
+
+it('treats an empty relation value as an empty list', function () {
+    expect(new PropSerializer()->relations(null, 2))->toBe([])
+        ->and(new PropSerializer()->relations([], 2))->toBe([])
+        ->and(new PropSerializer()->relations(collect(), 0))->toBe([]);
 });
