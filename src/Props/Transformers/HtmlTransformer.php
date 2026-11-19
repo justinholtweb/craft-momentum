@@ -39,7 +39,11 @@ final class HtmlTransformer implements FieldTransformer
                     $entry = $chunk->getEntry();
 
                     if ($entry instanceof Entry) {
-                        $chunks[] = ['type' => 'entry', 'entry' => $serializer->one($entry, $depth)];
+                        // `<craft-entry>` ids come from the HTML, so only this field's own entries
+                        // count as nested; anything else is treated (and gated) as a relation.
+                        $owner = $serializer->owner();
+                        $own = $owner !== null && $entry->getField()?->id === $field->id && $entry->getOwnerId() === $owner->id;
+                        $chunks[] = ['type' => 'entry', 'entry' => $serializer->one($entry, $depth, nested: $own)];
                     }
 
                     continue;

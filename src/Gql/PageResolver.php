@@ -90,8 +90,9 @@ class PageResolver
     private static function gate(Site $site): Closure
     {
         $memo = [];
+        $siteIds = array_map(fn (Site $s) => $s->id, GqlHelper::getAllowedSites());
 
-        return function (ElementInterface $element) use (&$memo, $site): bool {
+        return function (ElementInterface $element) use (&$memo, $site, $siteIds): bool {
             // Craft's resolvers assume the schema can query their element type, so check that first.
             $resolver = match (true) {
                 $element instanceof Entry => GqlHelper::canQueryEntries() ? EntryResolver::class : null,
@@ -100,7 +101,8 @@ class PageResolver
                 default => null,
             };
 
-            if ($resolver === null || $element->id === null) {
+            // Only on a site this schema can read.
+            if ($resolver === null || $element->id === null || ! in_array($element->siteId, $siteIds, true)) {
                 return false;
             }
 

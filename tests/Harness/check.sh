@@ -35,13 +35,14 @@ pagejson() { python3 -I -c 'import sys,re,json,html;s=sys.stdin.read();m=re.sear
 mkdir -p "$H/resources/views/momentum-t"
 cp "$SRC"/templates/props{.twig,-blade.blade.php} "$H/resources/views/momentum-t/"
 cp "$SRC"/templates/momentum-root.blade.php "$H/resources/views/"
-for f in fixtures gql-fixtures multisite-fixtures multisite-cleanup cleanup; do cp "$SRC/$f.php" "$H/storage/momentum-$f.php"; done
+for f in fixtures inject-foreign-entry gql-fixtures multisite-fixtures multisite-cleanup cleanup; do cp "$SRC/$f.php" "$H/storage/momentum-$f.php"; done
 cp "$SRC/ssr-server.mjs" "$H/storage/momentum-ssr.mjs"
 FIX=$(ptk fixtures | grep '^{"sink"')
 [ -z "$FIX" ] && { echo "fixtures failed"; exit 1; }
 id() { echo "$FIX" | pj "d['$1']"; }
 SINK=$(id sink); RA=$(id a); RB=$(id b); ASSET=$(id asset)
 echo "  (fixtures: kitchen sink $SINK, related $RA → $RB, asset $ASSET)"
+tk "require 'storage/momentum-inject-foreign-entry.php';" >/dev/null
 edition lite
 settings >/dev/null
 
@@ -88,7 +89,10 @@ ok "disabled entry 404s" "$(curl -sk -o /dev/null -w '%{http_code}' "$U/articles
 ok "unknown URI 404s" "$(curl -sk -o /dev/null -w '%{http_code}' "$U/articles/does-not-exist")" "404"
 
 # A fresh, verified CP session (other sessions on the shared harness sometimes end ours).
-cpj() { local j i; for i in 1 2 3; do j=$("$H/bin/cp-session" 2>/dev/null) && [ "$(curl -sk -b "$j" -o /dev/null -w '%{http_code}' "$U/admin/dashboard")" = 200 ] && { echo "$j"; return; }; sleep 2; done; echo /dev/null; }
+J=/dev/null
+cpok() { [ "$(curl -sk -b "$J" -o /dev/null -w '%{http_code}' "$U/admin/dashboard")" = 200 ]; }
+# Logins are rate-limited (429) and shared by every session on the harness: reuse ours, back off when refused.
+cpj() { local j w; cpok && { echo "$J"; return; }; for w in 0 10 30 60; do sleep $w; j=$("$H/bin/cp-session" 2>/dev/null) && { echo "$j"; return; }; done; echo /dev/null; }
 J=$(cpj)
 CV=$(curl -sk -b "$J" "$U/admin/dashboard" | pagejson | pj 'd["version"]')
 cp=$(curl -sk -b "$J" -H 'X-Inertia: true' -H "X-Inertia-Version: $CV" -H 'X-Requested-With: XMLHttpRequest' "$U/admin/dashboard")
@@ -110,7 +114,8 @@ ok "matrix: block fields" "$(f "['momentumBlocks'][0]['fields']['momentumHeading
 ok "matrix: nested blocks don't spend depth (block → A → B)" "$(f "['momentumBlocks'][1]['fields']['momentumRelated'][0]['fields']['momentumRelated'][0]['title']")" "Related B"
 ok "matrix: asset inside a block" "$(f "['momentumBlocks'][1]['fields']['momentumImage'][0]['id']")" "$ASSET"
 ok "ckeditor: html with ref tags parsed, nested entry left out" "$(f "['momentumBody']['html']")" "<p>Intro <strong>bold</strong></p><p>Outro</p>"
-ok "ckeditor: chunks in order (markup, entry, markup)" "$(echo "$page" | pj '",".join(c["type"] for c in d["props"]["entry"]["fields"]["momentumBody"]["chunks"])')" "markup,entry,markup"
+ok "ckeditor: chunks in order (markup, entry, markup, entry)" "$(echo "$page" | pj '",".join(c["type"] for c in d["props"]["entry"]["fields"]["momentumBody"]["chunks"])')" "markup,entry,markup,entry"
+ok "ckeditor: a <craft-entry> the field doesn't own is serialised as a relation" "$(echo "$page" | pj 'd["props"]["entry"]["fields"]["momentumBody"]["chunks"][3]["entry"]["title"]')" "Block one"
 ok "ckeditor: nested entry serialised" "$(f "['momentumBody']['chunks'][1]['entry']['fields']['momentumHeading']")" "Nested in CKEditor"
 ok "link: url + label" "$(echo "$page" | pj 'j(d["props"]["entry"]["fields"]["momentumLink"]["url"], d["props"]["entry"]["fields"]["momentumLink"]["label"], d["props"]["entry"]["fields"]["momentumLink"]["type"])')" "https://example.com/momentum/Example/url"
 ok "dropdown: {value, label}" "$(f "['momentumTone']")" "{'value': 'cool', 'label': 'Cool'}"
@@ -123,6 +128,12 @@ ok "addresses field absent from fields" "$(echo "$page" | pj '"momentumAddress" 
 ok "relations: two hops deep at depth 2" "$(f "['momentumRelated'][0]['fields']['momentumRelated'][0]['title']")" "Related B"
 ok "eloquent element: model attributes, never \$hidden" "$(xi "$U/articles/hello-momentum-2" | pj 'j(sorted(d["props"]["entry"]["fields"]["customers"][0]["attributes"].keys()), "email" in json.dumps(d))')" "['company', 'name']/False"
 
+BLOCK=$(echo "$page" | pj 'd["props"]["entry"]["fields"]["momentumBlocks"][0]["id"]')
+ok "relation to a nested entry: serialised as a relation" "$(echo "$page" | pj 'j(len(d["props"]["entry"]["fields"]["momentumRelated"]), d["props"]["entry"]["fields"]["momentumRelated"][1]["id"])')" "2/$BLOCK"
+settings "['propDepth' => 0]" >/dev/null
+page=$(xi "$K")
+ok "relation to a nested entry spends depth (an id at depth 0)" "$(echo "$page" | pj 'd["props"]["entry"]["fields"]["momentumRelated"]')" "[$RA, $BLOCK]"
+ok "ckeditor at depth 0: own entry still serialised, a foreign <craft-entry> is an id" "$(echo "$page" | pj 'j(d["props"]["entry"]["fields"]["momentumBody"]["chunks"][1]["entry"]["title"], d["props"]["entry"]["fields"]["momentumBody"]["chunks"][3]["entry"])')" "Inline block/$BLOCK"
 settings "['propDepth' => 1]" >/dev/null
 ok "depth 1: related entry serialised, its relations as ids" "$(xi "$K" | pj 'd["props"]["entry"]["fields"]["momentumRelated"][0]["fields"]["momentumRelated"]')" "[$RB]"
 settings "['excludeFields' => 'momentumKitchen.momentumSecret']" >/dev/null
@@ -178,7 +189,12 @@ d=r.get("data") or {}; m=d.get("momentumPage"); p=json.loads(m["props"]) if m an
 print(eval(sys.argv[1]))' "$3"; }
 KQ='{ momentumPage(uri: "momentum-kitchen/momentum-kitchen-sink") { component url site props } }'
 ok "gql: component, site and props for an Inertia entry" "$(gq full "$KQ" 'j(m["component"], m["site"], p["entry"]["title"])')" "Pages/Kitchen/default/Kitchen Sink"
-ok "gql: props match the Inertia page's entry" "$(gq full "$KQ" 'json.dumps(p["entry"], sort_keys=True)' | python3 -I -c 'import json,sys;print(json.loads(sys.stdin.read())==json.loads(sys.argv[1])["props"]["entry"])' "$(xi "$K")")" "True"
+# Same entry props as the Inertia page, except relations the schema couldn't fetch (the nested block reached by
+# relation, and the foreign <craft-entry>): no schema here has nested-entry-field access.
+ok "gql: props match the Inertia page's entry, less what the schema can't fetch" "$(gq full "$KQ" 'json.dumps(p["entry"], sort_keys=True)' | python3 -I -c 'import json,sys
+g=json.loads(sys.stdin.read()); w=json.loads(sys.argv[1])["props"]["entry"]
+w["fields"]["momentumRelated"]=w["fields"]["momentumRelated"][:1]; w["fields"]["momentumBody"]["chunks"][3]["entry"]=None
+print(g==w)' "$(xi "$K")")" "True"
 # (bash 3.2 mangles nested quotes inside "$(…)", so queries with variables are built first)
 QID="{ momentumPage(id: $SINK) { component } }"
 QBOTH="{ momentumPage(id: $SINK, uri: \"x\") { component } }"
@@ -187,9 +203,14 @@ ok "gql: unknown uri → null" "$(gq full '{ momentumPage(uri: "momentum-kitchen
 ok "gql: id and uri together refused" "$(gq full "$QBOTH" 'm')" "ERR:Pass either \`id\` or \`uri\`."
 ok "gql: schema without the component has no momentumPage" "$(gq nopages "$KQ" 'm')" "ERR:Cannot query field \"momentumPage\" on type \"Query\"."
 ok "gql: entry in a section the schema can't read → null" "$(gq noarticles '{ momentumPage(uri: "articles/hello-momentum-2") { component } }' 'm')" "None"
-ok "gql: related entry the schema can read is kept" "$(gq noarticles "$KQ" 'p["entry"]["fields"]["momentumRelated"][0]["title"]')" "Related A"
+ok "gql: related entry the schema can read is kept; a related nested entry it can't fetch is dropped" "$(gq noarticles "$KQ" '",".join(e["title"] for e in p["entry"]["fields"]["momentumRelated"])')" "Related A"
+ok "gql: CKEditor's own nested entry kept, a foreign <craft-entry> gated out" "$(gq noarticles "$KQ" 'j(p["entry"]["fields"]["momentumBody"]["chunks"][1]["entry"]["fields"]["momentumHeading"], p["entry"]["fields"]["momentumBody"]["chunks"][3]["entry"])')" "Nested in CKEditor/None"
 ok "gql: assets from a volume the schema can't read are left out" "$(gq noarticles "$KQ" 'j(p["entry"]["fields"]["momentumImage"], p["entry"]["fields"]["momentumBlocks"][1]["fields"]["momentumImage"])')" "[]/[]"
 ok "gql: users the schema can't read are left out" "$(gq noarticles "$KQ" 'p["entry"]["fields"]["momentumAuthor"]')" "[]"
+LQ='{ momentumPage(uri: "momentum-kitchen/momentum-related-b") { props } }'
+tk "\$e=CraftCms\\Cms\\Entry\\Elements\\Entry::find()->section('momentumKitchen')->slug('momentum-related-b')->one(); \$e->setFieldValue('momentumLink', ['type' => 'entry', 'value' => '{entry:10@1:url}', 'label' => 'Secret article']); echo CraftCms\\Cms\\Support\\Facades\\Elements::saveElement(\$e) ? 1 : 0;" >/dev/null
+ok "gql: link to an entry the schema can't read → whole link null (no url/label)" "$(gq noarticles "$LQ" 'j(p["entry"]["fields"]["momentumLink"], "Secret article" in m["props"], "second-article" in m["props"])')" "None/False/False"
+ok "gql: the same link for a schema that can read it" "$(gq full "$LQ" 'j(p["entry"]["fields"]["momentumLink"]["label"], p["entry"]["fields"]["momentumLink"]["element"])')" "Secret article/10"
 ok "gql: full schema keeps assets and users" "$(gq full "$KQ" 'j(p["entry"]["fields"]["momentumImage"][0]["id"], p["entry"]["fields"]["momentumAuthor"][0]["name"])')" "$ASSET/Ada"
 ok "gql: eloquent/other element types are left out" "$(gq full '{ momentumPage(uri: "articles/hello-momentum-2") { props } }' 'p["entry"]["fields"]["customers"]')" "[]"
 ok "gql: no email, no excluded field" "$(settings "['excludeFields' => 'momentumSecret']" >/dev/null; gq full "$KQ" '("momentum.test" in m["props"], "SECRET" in m["props"])')" "(False, False)"
@@ -210,8 +231,15 @@ if [ "$(tk "echo CraftCms\\Cms\\Support\\Facades\\Sites::getSiteByHandle('moment
   ok "multisite: English page is unchanged" "$(xi "$K" | pj 'j(d["props"]["entry"]["title"], d["props"]["site"]["handle"])')" "Kitchen Sink/default"
   ok "multisite: twig props on the French site" "$(curl -sk "$U/momentumfr/momentum-t/props?slug=momentum-kitchen-sink" | python3 -I -c 'import sys,re,json;print(json.loads(re.search(r"<script id=\"props\" type=\"application/json\">(.*?)</script>",sys.stdin.read(),re.S).group(1))["entry"]["title"])')" "Évier de cuisine"
   ok "multisite: blade props on the French site" "$(curl -sk "$U/momentumfr/momentum-t/props-blade?slug=momentum-kitchen-sink" | python3 -I -c 'import sys,re,json;print(json.loads(re.search(r"<script id=\"props\" type=\"application/json\">(.*?)</script>",sys.stdin.read(),re.S).group(1))["entry"]["title"])')" "Évier de cuisine"
+  # The relation gate refuses elements on sites the schema can't read, before any query.
+  gate() { tk "Illuminate\\Support\\Facades\\App::make(CraftCms\\Cms\\Gql\\Gql::class)->setActiveSchema(collect(CraftCms\\Cms\\Support\\Facades\\Gql::getSchemas())->first(fn(\$s)=>\$s->name==='momentum_full')); \$g=(new ReflectionMethod(JustinHoltWeb\\Momentum\\Gql\\PageResolver::class, 'gate'))->invoke(null, CraftCms\\Cms\\Support\\Facades\\Sites::getPrimarySite()); echo json_encode(\$g(CraftCms\\Cms\\Entry\\Elements\\Entry::find()->id($RA)->site('$1')->one()));"; }
+  ok "multisite gql gate: element on a site the schema can't read → refused" "$(gate momentumfr)" "false"
+  ok "multisite gql gate: same element on a readable site → allowed" "$(gate default)" "true"
   ok "multisite gql: a site the schema can't read is refused" "$(gq full '{ momentumPage(uri: "cuisine/momentum-kitchen-sink", site: "momentumfr") { component } }' 'm')" "ERR:This schema can’t read the “momentumfr” site."
-  tk "\$s=collect(CraftCms\\Cms\\Support\\Facades\\Gql::getSchemas())->first(fn(\$s)=>\$s->name==='momentum_full'); \$s->scope=[...\$s->scope, 'sites.'.CraftCms\\Cms\\Support\\Facades\\Sites::getSiteByHandle('momentumfr')->uid.':read']; CraftCms\\Cms\\Support\\Facades\\Gql::saveSchema(\$s); CraftCms\\Cms\\Support\\Facades\\Gql::invalidateCaches(); echo 1;" >/dev/null
+  for i in 1 2 3 4; do
+    [ "$(tk "\$s=collect(CraftCms\\Cms\\Support\\Facades\\Gql::getSchemas())->first(fn(\$s)=>\$s->name==='momentum_full'); \$s->scope=array_values(array_unique([...\$s->scope, 'sites.'.CraftCms\\Cms\\Support\\Facades\\Sites::getSiteByHandle('momentumfr')->uid.':read'])); echo CraftCms\\Cms\\Support\\Facades\\Gql::saveSchema(\$s) ? 'saved' : 'no'; CraftCms\\Cms\\Support\\Facades\\Gql::invalidateCaches();")" = saved ] && break; sleep 1
+  done
+  ok "multisite gql gate: once the schema can read the site → allowed" "$(gate momentumfr)" "true"
   ok "multisite gql: the French page by URI" "$(gq full '{ momentumPage(uri: "cuisine/momentum-kitchen-sink", site: "momentumfr") { site props } }' 'j(m["site"], p["entry"]["title"], p["entry"]["fields"]["momentumRelated"][0]["title"])')" "momentumfr/Évier de cuisine/Lié A"
   ok "multisite gql: alternates only list sites the schema can read" "$(gq noarticles "$KQ" 'len(p["alternates"])')" "1"
   ftoggle() { tk "\$e=CraftCms\\Cms\\Entry\\Elements\\Entry::find()->id($SINK)->site('momentumfr')->status(null)->one(); \$e->enabledForSite=$1; echo CraftCms\\Cms\\Support\\Facades\\Elements::saveElement(\$e) ? 'saved' : 'failed';"; }

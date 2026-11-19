@@ -18,7 +18,7 @@ final class NestedEntriesTransformer implements FieldTransformer
 {
     public function transform(FieldInterface $field, mixed $value, PropSerializer $serializer, int $depth): mixed
     {
-        return $serializer->relations($value, $depth);
+        return $serializer->nested($value, $depth);
     }
 
     public function typeScript(FieldInterface $field, TypeScriptWriter $writer): string

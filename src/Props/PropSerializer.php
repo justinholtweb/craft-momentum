@@ -8,12 +8,12 @@ use BackedEnum;
 use Closure;
 use CraftCms\Cms\Asset\Elements\Asset;
 use CraftCms\Cms\Element\Contracts\ElementInterface;
-use CraftCms\Cms\Element\Contracts\NestedElementInterface;
 use CraftCms\Cms\Element\Eloquent\EloquentElement;
 use CraftCms\Cms\Element\Queries\Contracts\ElementQueryInterface;
 use CraftCms\Cms\Entry\Elements\Entry;
 use CraftCms\Cms\Field\Assets as AssetsField;
 use CraftCms\Cms\Field\Contracts\EagerLoadingFieldInterface;
+use CraftCms\Cms\Field\Contracts\ElementContainerFieldInterface;
 use CraftCms\Cms\Field\Contracts\FieldInterface;
 use CraftCms\Cms\Field\Elements\ContentBlock;
 use CraftCms\Cms\Support\Facades\Elements;
@@ -48,6 +48,8 @@ use UnitEnum;
  */
 class PropSerializer
 {
+    private ?ElementInterface $owner = null;
+
     /**
      * @param  list<string>  $assetTransforms  Named image transforms added to every image asset as `transforms.{handle}`.
      * @param  (Closure(ElementInterface): bool)|null  $allow  Gate for related (non-nested) elements; denied ones are dropped.
@@ -187,10 +189,25 @@ class PropSerializer
     {
         $value = $element->getFieldValue((string) $field->handle);
         $transformer = $this->transformers?->for($field);
+        $previous = $this->owner;
+        $this->owner = $element;
 
-        return $transformer !== null
-            ? $transformer->transform($field, $value, $this, $depth)
-            : $this->value($value, $depth);
+        try {
+            return $transformer !== null
+                ? $transformer->transform($field, $value, $this, $depth)
+                : $this->value($value, $depth);
+        } finally {
+            $this->owner = $previous;
+        }
+    }
+
+    /**
+     * The element whose field is being transformed, so a transformer can tell
+     * the owner's own nested elements from anything else a value points at.
+     */
+    public function owner(): ?ElementInterface
+    {
+        return $this->owner;
     }
 
     public function value(mixed $value, int $depth): mixed
@@ -201,6 +218,7 @@ class PropSerializer
             $value instanceof BackedEnum => $value->value,
             $value instanceof UnitEnum => $value->name,
             $value instanceof ElementInterface => $this->one($value, $depth),
+            // Unknown field types: any elements in their values are treated as relations.
             $value instanceof ElementQueryInterface => $this->relations($value, $depth),
             // Before Arrayable: a collection's toArray() would serialise elements wholesale.
             $value instanceof Collection => $this->list($value->all(), $depth),
@@ -215,29 +233,49 @@ class PropSerializer
     }
 
     /**
-     * A relation field's value (query, collection or list) as a list of
-     * serialised elements, or ids once depth runs out.
+     * A relation's value (query, collection or list): every element is a
+     * relation hop, so it passes the gate and spends depth, and becomes an id
+     * once depth runs out. This holds even for elements that happen to be nested
+     * entries elsewhere: what counts is how they were reached.
      *
      * @return list<mixed>
      */
     public function relations(mixed $value, int $depth): array
     {
-        return $this->elements($this->elementList($value), $depth);
+        $elements = array_values(array_filter($this->elementList($value), $this->allowed(...)));
+
+        return array_map(fn (ElementInterface $e) => $depth > 0 ? $this->element($e, $depth - 1) : $e->id, $elements);
     }
 
     /**
-     * A single element (e.g. a content block or a link's target), or null when
-     * it's gated out.
+     * The owner's own nested elements (Matrix entries, a content block, CKEditor
+     * entries), reached through one of its element-container fields. They're part
+     * of the owner, which has already passed the gate, so they don't spend depth.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function nested(mixed $value, int $depth): array
+    {
+        return array_map(fn (ElementInterface $e) => $this->element($e, $depth), $this->elementList($value));
+    }
+
+    /**
+     * A single related element (e.g. a link's target): gated, spends depth, null
+     * when it's gated out. Pass `nested: true` only for the owner's own nested element.
      *
      * @return array<string, mixed>|int|null
      */
-    public function one(?ElementInterface $element, int $depth): array|int|null
+    public function one(?ElementInterface $element, int $depth, bool $nested = false): array|int|null
     {
-        if ($element === null || ! $this->allowed($element)) {
+        if ($element === null) {
             return null;
         }
 
-        return $this->related($element, $depth);
+        if ($nested) {
+            return $this->element($element, $depth);
+        }
+
+        return $this->relations([$element], $depth)[0] ?? null;
     }
 
     /**
@@ -287,8 +325,10 @@ class PropSerializer
 
             foreach ($group as $element) {
                 foreach (array_keys($handles) as $handle) {
+                    $container = $element->getFieldLayout()?->getFieldByHandle($handle) instanceof ElementContainerFieldInterface;
+
                     foreach ($element->getEagerLoadedElements($handle) ?? [] as $child) {
-                        if (self::isNested($child)) {
+                        if ($container) {
                             $nested[] = $child;
                         } elseif ($depth > 0 && $this->allowed($child)) {
                             $related[] = $child;
@@ -351,7 +391,7 @@ class PropSerializer
     private function list(array $values, int $depth): array
     {
         if ($values !== [] && array_all($values, fn ($v) => $v instanceof ElementInterface)) {
-            return $this->elements(array_values($values), $depth);
+            return $this->relations($values, $depth);
         }
 
         return array_map(fn ($v) => $this->value($v, $depth), $values);
@@ -373,36 +413,9 @@ class PropSerializer
         return array_values(array_filter($items, fn ($e) => $e instanceof ElementInterface));
     }
 
-    /**
-     * @param  list<ElementInterface>  $elements
-     * @return list<mixed>
-     */
-    private function elements(array $elements, int $depth): array
-    {
-        $elements = array_values(array_filter($elements, $this->allowed(...)));
-
-        if ($depth <= 0 && ! array_all($elements, self::isNested(...))) {
-            return array_map(fn (ElementInterface $e) => $e->id, $elements);
-        }
-
-        return array_map(fn (ElementInterface $e) => $this->related($e, $depth), $elements);
-    }
-
-    /**
-     * @return array<string, mixed>|int|null
-     */
-    private function related(ElementInterface $element, int $depth): array|int|null
-    {
-        if (self::isNested($element)) {
-            return $this->element($element, $depth);
-        }
-
-        return $depth > 0 ? $this->element($element, $depth - 1) : $element->id;
-    }
-
     private function allowed(ElementInterface $element): bool
     {
-        return self::isNested($element) || $this->allow === null || ($this->allow)($element);
+        return $this->allow === null || ($this->allow)($element);
     }
 
     /**
@@ -453,11 +466,6 @@ class PropSerializer
         }
 
         return $attributes;
-    }
-
-    public static function isNested(ElementInterface $element): bool
-    {
-        return $element instanceof NestedElementInterface && $element->getField() !== null;
     }
 
     /**

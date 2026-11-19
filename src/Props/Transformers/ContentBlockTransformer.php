@@ -15,13 +15,8 @@ final class ContentBlockTransformer implements FieldTransformer
 {
     public function transform(FieldInterface $field, mixed $value, PropSerializer $serializer, int $depth): mixed
     {
-        if ($value instanceof ElementInterface) {
-            return $serializer->one($value, $depth);
-        }
-
-        $first = $serializer->relations($value, $depth)[0] ?? null;
-
-        return is_array($first) ? $first : null;
+        // The field's own block, part of its owner: no gate, no depth spent.
+        return $serializer->nested($value instanceof ElementInterface ? [$value] : $value, $depth)[0] ?? null;
     }
 
     public function typeScript(FieldInterface $field, TypeScriptWriter $writer): string

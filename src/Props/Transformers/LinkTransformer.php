@@ -13,7 +13,7 @@ use Throwable;
 /**
  * Link: `{type, url, label, target, title, rel, download, element}`. Links to
  * elements use the element's live URL (a disabled target gives no URL) and
- * carry `{id, title, url}` of the target as `element`.
+ * carry the target's id as `element`.
  */
 final class LinkTransformer implements FieldTransformer
 {
@@ -32,6 +32,13 @@ final class LinkTransformer implements FieldTransformer
             return null;
         }
 
+        $target = $element === null ? null : $serializer->one($element, 0);
+
+        // A target the serializer gates out (e.g. outside a GraphQL schema) takes the whole link with it.
+        if ($element !== null && $target === null) {
+            return null;
+        }
+
         return [
             'type' => $value->getType(),
             'url' => $url === '' ? null : $url,
@@ -40,12 +47,12 @@ final class LinkTransformer implements FieldTransformer
             'title' => $value->title,
             'rel' => $value->rel,
             'download' => $value->download,
-            'element' => $element === null ? null : $serializer->one($element, 0),
+            'element' => $target,
         ];
     }
 
     public function typeScript(FieldInterface $field, TypeScriptWriter $writer): string
     {
-        return '{ type: string; url: string | null; label: string | null; target: string | null; title: string | null; rel: string | null; download: boolean; element: MomentumElementRef | number | null } | null';
+        return '{ type: string; url: string | null; label: string | null; target: string | null; title: string | null; rel: string | null; download: boolean; element: number | null } | null';
     }
 }

@@ -222,7 +222,12 @@ if ($body) {
         $nested->setFieldValues(['momentumHeading' => 'Nested in CKEditor']);
         Elements::saveElement($nested) || $fail('ckeditor nested entry', $nested);
     }
-    $sink->setFieldValue('momentumBody', '<p>Intro <strong>bold</strong></p><craft-entry data-entry-id="'.$nested->id.'"></craft-entry><p>Outro</p>');
+    // A second <craft-entry> pointing at an entry this field doesn't own (the sink's first Matrix block):
+    // Momentum must treat it as a relation (gated, spends depth), not as one of the field's own entries.
+    $foreign = Entry::find()->ownerId($sink->id)->fieldId($blocks->id)->type('momentumText')->status(null)->one();
+    $sink->setFieldValue('momentumBody', '<p>Intro <strong>bold</strong></p><craft-entry data-entry-id="'.$nested->id.'"></craft-entry><p>Outro</p><craft-entry data-entry-id="'.$foreign->id.'"></craft-entry>');
+    // And a relation straight to that nested block: a relation hop, whatever the target's class.
+    $sink->setFieldValue('momentumRelated', [$a->id, $foreign->id]);
     Elements::saveElement($sink) || $fail('sink body', $sink);
 }
 
