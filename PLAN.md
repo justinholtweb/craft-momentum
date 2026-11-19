@@ -77,7 +77,7 @@ reinstalls cleanly in the harness · CP pages smoke-tested with `bin/cp-session`
    typed sub-fields, or drop the query and keep Momentum template-only?
 5. **Users in props** are `{id, name}` only (name = Craft's friendly name, i.e. first name when set). Want
    `fullName`/photo too, opt-in?
-6. **Site accent** for justinholt.com: I used teal **#4FB3AA** (the icon's #439690 lifted for the dark
+6. **Site accent** for justinholt.com: I used teal **#4FB8AD** (the icon's #439690 lifted for the dark
    background). OK?
 
 ## Craft 6 beta notes (found while building)
