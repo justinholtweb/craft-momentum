@@ -8,6 +8,8 @@ use Closure;
 use CraftCms\Cms\Plugin\PluginSettings;
 use JustinHoltWeb\Momentum\Props\FieldRules;
 
+use function CraftCms\Cms\t;
+
 /**
  * Blank-able properties are nullable: Laravel's ConvertEmptyStringsToNull middleware
  * turns an empty field into null before Craft assigns it.
@@ -112,7 +114,7 @@ class Settings extends PluginSettings
         $handles = function (string $attribute, mixed $value, Closure $fail): void {
             foreach (self::lines($value) as $line) {
                 if (! preg_match('/^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)?$/', $line)) {
-                    $fail("“{$line}” isn’t a field handle (use `handle` or `entryType.handle`).");
+                    $fail(t('“{handle}” isn’t a field handle (use `handle` or `entryType.handle`).', ['handle' => $line], category: 'momentum'));
                 }
             }
         };
@@ -125,13 +127,13 @@ class Settings extends PluginSettings
                 $lines = self::lines($value, commas: false);
 
                 if (count(FieldRules::parseRenames($lines)) !== count($lines)) {
-                    $fail('Write each rename as `handle: propName` (prop names are letters, numbers and underscores).');
+                    $fail(t('Write each rename as `handle: propName` (prop names are letters, numbers and underscores).', category: 'momentum'));
                 }
             }],
             'assetTransforms' => [function (string $attribute, mixed $value, Closure $fail): void {
                 foreach (self::lines($value) as $line) {
                     if (! preg_match('/^[A-Za-z][A-Za-z0-9_]*$/', $line)) {
-                        $fail("“{$line}” isn’t an image transform handle.");
+                        $fail(t('“{handle}” isn’t an image transform handle.', ['handle' => $line], category: 'momentum'));
                     }
                 }
             }],
