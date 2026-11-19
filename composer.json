@@ -59,6 +59,7 @@
         "sort-packages": true
     },
     "support": {
+        "docs": "https://justinholt.com/plugins/craft-momentum/docs",
         "issues": "https://github.com/justinholtweb/craft-momentum/issues",
         "source": "https://github.com/justinholtweb/craft-momentum"
     },
@@ -67,7 +68,7 @@
         "handle": "momentum",
         "developer": "Justin Holt",
         "developerUrl": "https://justinholt.com",
-        "documentationUrl": "https://github.com/justinholtweb/craft-momentum",
+        "documentationUrl": "https://justinholt.com/plugins/craft-momentum/docs",
         "changelogUrl": "https://raw.githubusercontent.com/justinholtweb/craft-momentum/main/CHANGELOG.md",
         "class": "JustinHoltWeb\\Momentum\\Plugin"
     }
