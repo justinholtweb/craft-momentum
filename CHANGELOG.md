@@ -1,6 +1,11 @@
 # Release Notes for Momentum
 
-## 6.0.0-beta.1 - Unreleased
+## 6.0.0-beta.2 - 2026-11-21
+
+### Changed
+- No code changes. The changelog now carries release dates.
+
+## 6.0.0-beta.1 - 2026-11-19
 
 > Craft 6 only. Craft 6 is in beta: use caution on production.
 
